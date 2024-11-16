@@ -911,13 +911,15 @@ diesel::table! {
 }
 
 diesel::table! {
-    multi_keys (transaction_version) {
+    multikey_layouts (transaction_version, public_key_index) {
         transaction_version -> Int8,
         transaction_block_height -> Int8,
+        #[max_length = 66]
+        signer -> Varchar,
         #[sql_name = "type"]
         #[max_length = 50]
         type_ -> Varchar,
-        #[max_length = 66]
+        #[max_length = 132]
         public_key -> Varchar,
         public_key_index -> Int8,
         threshold -> Int8,
@@ -1359,7 +1361,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     ledger_infos,
     move_modules,
     move_resources,
-    multi_keys,
+    multikey_layouts,
     nft_points,
     objects,
     processor_status,

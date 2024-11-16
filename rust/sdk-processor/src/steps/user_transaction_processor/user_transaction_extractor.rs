@@ -38,7 +38,7 @@ impl Processable for UserTransactionExtractor {
         Option<TransactionContext<(Vec<UserTransactionModel>, Vec<Signature>)>>,
         ProcessorError,
     > {
-        let (user_transactions, signatures) =
+        let (user_transactions, signatures, _multikey_layout) =
             user_transaction_parse(item.data, self.deprecated_tables);
         Ok(Some(TransactionContext {
             data: (user_transactions, signatures),

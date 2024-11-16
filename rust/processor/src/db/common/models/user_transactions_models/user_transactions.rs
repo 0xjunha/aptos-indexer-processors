@@ -9,6 +9,7 @@
 
 use super::signatures::Signature;
 use crate::{
+    db::common::models::user_transactions_models::multikey_layouts::MultiKeyLayout,
     schema::user_transactions,
     utils::util::{
         get_entry_function_from_user_request, parse_timestamp, standardize_address,
@@ -47,7 +48,7 @@ impl UserTransaction {
         block_height: i64,
         epoch: i64,
         version: i64,
-    ) -> (Self, Vec<Signature>) {
+    ) -> (Self, Vec<Signature>, Vec<MultiKeyLayout>) {
         let user_request = txn
             .request
             .as_ref()
@@ -81,6 +82,7 @@ impl UserTransaction {
                 epoch,
             },
             Self::get_signatures(user_request, version, block_height),
+            Self::get_multikey_layout(user_request, version, block_height),
         )
     }
 
@@ -96,6 +98,26 @@ impl UserTransaction {
             .map(|s| {
                 Signature::from_user_transaction(s, &user_request.sender, version, block_height)
                     .unwrap()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn get_multikey_layout(
+        user_request: &UserTransactionRequest,
+        version: i64,
+        block_height: i64,
+    ) -> Vec<MultiKeyLayout> {
+        user_request
+            .signature
+            .as_ref()
+            .map(|s| {
+                MultiKeyLayout::from_user_transaction(
+                    s,
+                    &user_request.sender,
+                    version,
+                    block_height,
+                )
+                .unwrap()
             })
             .unwrap_or_default()
     }

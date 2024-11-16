@@ -4,7 +4,8 @@
 use super::{DefaultProcessingResult, ProcessorName, ProcessorTrait};
 use crate::{
     db::common::models::user_transactions_models::{
-        signatures::Signature, user_transactions::UserTransactionModel,
+        multikey_layouts::MultiKeyLayout, signatures::Signature,
+        user_transactions::UserTransactionModel,
     },
     gap_detectors::ProcessingResult,
     schema,
@@ -64,6 +65,7 @@ async fn insert_to_db(
     end_version: u64,
     user_transactions: &[UserTransactionModel],
     signatures: &[Signature],
+    multikey_layouts: &[MultiKeyLayout],
     per_table_chunk_sizes: &AHashMap<String, usize>,
 ) -> Result<(), diesel::result::Error> {
     tracing::trace!(
@@ -83,14 +85,20 @@ async fn insert_to_db(
         ),
     );
     let is = execute_in_chunks(
-        conn,
+        conn.clone(),
         insert_signatures_query,
         signatures,
         get_config_table_chunk_size::<Signature>("signatures", per_table_chunk_sizes),
     );
+    let mk = execute_in_chunks(
+        conn,
+        insert_multikey_layouts_query,
+        multikey_layouts,
+        get_config_table_chunk_size::<MultiKeyLayout>("multikey_layouts", per_table_chunk_sizes),
+    );
 
-    let (ut_res, is_res) = futures::join!(ut, is);
-    for res in [ut_res, is_res] {
+    let (ut_res, is_res, mk_res) = futures::join!(ut, is, mk);
+    for res in [ut_res, is_res, mk_res] {
         res?;
     }
     Ok(())
@@ -137,6 +145,22 @@ pub fn insert_signatures_query(
     )
 }
 
+pub fn insert_multikey_layouts_query(
+    items_to_insert: Vec<MultiKeyLayout>,
+) -> (
+    impl QueryFragment<Pg> + diesel::query_builder::QueryId + Send,
+    Option<&'static str>,
+) {
+    use schema::multikey_layouts::dsl::*;
+    (
+        diesel::insert_into(schema::multikey_layouts::table)
+            .values(items_to_insert)
+            .on_conflict((transaction_version, public_key_index))
+            .do_nothing(),
+        None,
+    )
+}
+
 #[async_trait]
 impl ProcessorTrait for UserTransactionProcessor {
     fn name(&self) -> &'static str {
@@ -153,7 +177,7 @@ impl ProcessorTrait for UserTransactionProcessor {
         let processing_start = std::time::Instant::now();
         let last_transaction_timestamp = transactions.last().unwrap().timestamp.clone();
 
-        let (user_transactions, signatures) =
+        let (user_transactions, signatures, multikey_layouts) =
             user_transaction_parse(transactions, self.deprecated_tables);
 
         let processing_duration_in_secs = processing_start.elapsed().as_secs_f64();
@@ -166,6 +190,7 @@ impl ProcessorTrait for UserTransactionProcessor {
             end_version,
             &user_transactions,
             &signatures,
+            &multikey_layouts,
             &self.per_table_chunk_sizes,
         )
         .await;
@@ -198,13 +223,18 @@ impl ProcessorTrait for UserTransactionProcessor {
     }
 }
 
-/// Helper function to parse user transactions and signatures from the transaction data.
+/// Helper function to parse user transactions, signatures and multikey layout from the transaction data.
 pub fn user_transaction_parse(
     transactions: Vec<Transaction>,
     deprecated_tables: TableFlags,
-) -> (Vec<UserTransactionModel>, Vec<Signature>) {
+) -> (
+    Vec<UserTransactionModel>,
+    Vec<Signature>,
+    Vec<MultiKeyLayout>,
+) {
     let mut signatures = vec![];
     let mut user_transactions = vec![];
+    let mut multikey_layouts = vec![];
     for txn in transactions {
         let txn_version = txn.version as i64;
         let block_height = txn.block_height as i64;
@@ -222,7 +252,7 @@ pub fn user_transaction_parse(
             },
         };
         if let TxnData::User(inner) = txn_data {
-            let (user_transaction, sigs) = UserTransactionModel::from_transaction(
+            let (user_transaction, sigs, multikey_layout) = UserTransactionModel::from_transaction(
                 inner,
                 txn.timestamp.as_ref().unwrap(),
                 block_height,
@@ -231,6 +261,7 @@ pub fn user_transaction_parse(
             );
             signatures.extend(sigs);
             user_transactions.push(user_transaction);
+            multikey_layouts.extend(multikey_layout);
         }
     }
 
@@ -238,5 +269,5 @@ pub fn user_transaction_parse(
         signatures.clear();
     }
 
-    (user_transactions, signatures)
+    (user_transactions, signatures, multikey_layouts)
 }
