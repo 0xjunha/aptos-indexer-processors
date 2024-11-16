@@ -911,6 +911,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    multi_keys (transaction_version) {
+        transaction_version -> Int8,
+        transaction_block_height -> Int8,
+        #[sql_name = "type"]
+        #[max_length = 50]
+        type_ -> Varchar,
+        #[max_length = 66]
+        public_key -> Varchar,
+        public_key_index -> Int8,
+        threshold -> Int8,
+        total_public_keys -> Int8,
+        is_used -> Bool,
+        inserted_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     nft_points (transaction_version) {
         transaction_version -> Int8,
         #[max_length = 66]
@@ -1342,6 +1359,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     ledger_infos,
     move_modules,
     move_resources,
+    multi_keys,
     nft_points,
     objects,
     processor_status,
